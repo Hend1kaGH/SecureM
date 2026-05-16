@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SecureChat OS</title>
+    <title>SecureChat OS v2.0</title>
     
     <!-- Pustaka AI TensorFlow & BodyPix untuk Blur Background -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
@@ -517,7 +517,7 @@
     <div class="app-container">
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                Voice Channels
+                Voice Channels <span style="font-size: 10px; color: #64748b; margin-left: 5px;">v2.0</span>
             </div>
             <div class="settings-panel">
                 <div class="input-group">
@@ -654,7 +654,8 @@
         </div>
     </div>
 
-    <script src="/socket.io/socket.io.js"></script>
+    <!-- Gunakan CDN untuk memuat Socket.io agar bisa berjalan di Vercel -->
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
     <script>
         const channelInput = document.getElementById('channel-input');
         const setChannelBtn = document.getElementById('set-channel');
@@ -690,7 +691,11 @@
         if (typeof io === 'undefined') {
             alert("ERR: SERVER MATI. Pastikan Anda mengakses via http://localhost:3000 dan BUKAN mengklik ganda file HTML.");
         } else {
-            const socket = io();
+            // Ganti URL di bawah dengan URL server Render/Railway Anda nanti
+            // Masukkan URL Backend dari Koyeb/Render. Pastikan tidak ada tanda '/' di paling belakang.
+            const BACKEND_URL = 'https://URL-BACKEND-ANDA-DI-KOYEB-ATAU-RENDER.com'; 
+            const socket = io(BACKEND_URL);
+            
             let currentChannel = '1';
             const chDisplay = document.getElementById('ch-display');
             const userListEl = document.getElementById('user-list');
@@ -810,7 +815,7 @@
                     currentChannel = newChannel;
                     activeChannelLabel.innerText = 'Active in Channel ';
                     chDisplay.innerText = currentChannel; // Perbarui teks di atas panel pengguna
-                    callControls.style.display = 'flex'; // Tampilkan tombol navigasi
+                    callControls.style.setProperty('display', 'flex', 'important'); // Tampilkan tombol navigasi
                     chatChannelLabel.innerText = 'Channel ';
                     chatHeaderCh.innerText = currentChannel;
                     
@@ -1021,6 +1026,7 @@
             });
 
             socket.on('typing', (data) => {
+                if (!currentChannel) return; // Cegah indikator masuk jika sudah offline
                 if (mutedUsers.has(data.username)) return; // Jangan tampilkan indikator jika user di-mute
                 if (data.isTyping) {
                     typingUsers.add(data.username);
@@ -1073,6 +1079,7 @@
 
             // Fungsi Sentral Merender Pesan Chat (Teks dan Gambar)
             function renderMessage(data, type) {
+                if (!currentChannel) return; // Cegah pesan masuk jika sudah offline
                 if (mutedUsers.has(data.username)) return; // Sembunyikan pesan teks dari user yang di-mute
 
                 const msgDiv = document.createElement('div');
@@ -1150,11 +1157,23 @@
                 chatMessages.scrollTop = chatMessages.scrollHeight; // Auto-scroll ke bawah saat pesan baru masuk
             }
 
+            // Mendengarkan riwayat obrolan dari MongoDB saat baru masuk channel
+            socket.on('chatHistory', (messages) => {
+                messages.forEach(msg => {
+                    if (msg.type === 'image') {
+                        renderMessage({ id: msg.messageId, username: msg.username, image: msg.image }, 'image');
+                    } else {
+                        renderMessage({ id: msg.messageId, username: msg.username, text: msg.text }, 'text');
+                    }
+                });
+            });
+
             socket.on('textMessage', (data) => renderMessage(data, 'text'));
             socket.on('imageMessage', (data) => renderMessage(data, 'image'));
 
             // Mendengarkan instruksi penghapusan pesan dari server
             socket.on('messageDeleted', (msgId) => {
+                if (!currentChannel) return;
                 const msgEl = document.getElementById(`msg-${msgId}`);
                 if (msgEl) {
                     // Efek animasi menyusut dan memudar sebelum elemennya dihapus total
@@ -1193,6 +1212,40 @@
                 updateVideoGridVisibility();
             }
 
+            // Fungsi Buka Layar Penuh (Fullscreen API)
+            window.toggleFullscreen = function(element) {
+                const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
+                if (!isFullscreen) {
+                    if (element.requestFullscreen) element.requestFullscreen();
+                    else if (element.webkitRequestFullscreen) element.webkitRequestFullscreen();
+                    else if (element.msRequestFullscreen) element.msRequestFullscreen();
+                } else {
+                    if (document.exitFullscreen) document.exitFullscreen();
+                    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                    else if (document.msExitFullscreen) document.msExitFullscreen();
+                }
+            };
+            
+            // Menyiarkan Status Media Lokal ke Server
+            function emitMediaState() {
+                socket.emit('mediaStateChange', { audio: isAudioEnabled, video: isVideoEnabled || isScreenSharing });
+            }
+
+            // Menerima Update Status Media Pengguna Lain
+            socket.on('userMediaUpdate', (data) => {
+                if (!currentChannel) return; 
+                const micIcon = document.querySelector(`#media-icons-${data.id} .mic-icon`);
+                const camIcon = document.querySelector(`#media-icons-${data.id} .cam-icon`);
+                if (micIcon) {
+                    if (data.media.audio) micIcon.classList.add('active');
+                    else micIcon.classList.remove('active');
+                }
+                if (camIcon) {
+                    if (data.media.video) camIcon.classList.add('active');
+                    else camIcon.classList.remove('active');
+                }
+            });
+
             async function getMediaStream() {
                 if (!localStream) {
                     try {
@@ -1227,6 +1280,7 @@
                         document.getElementById('icon-mic').innerHTML = '<line x1="1" y1="1" x2="23" y2="23"></line><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line>';
                     }
                 }
+                emitMediaState();
             });
 
             btnCam.addEventListener('click', async () => {
@@ -1245,6 +1299,7 @@
                         document.getElementById('icon-cam').innerHTML = '<path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10"></path><line x1="1" y1="1" x2="23" y2="23"></line>';
                     }
                 }
+                emitMediaState();
             });
 
             btnScreen.addEventListener('click', async () => {
@@ -1319,9 +1374,10 @@
                 chatChannelLabel.innerText = 'Offline';
                 chatHeaderCh.innerText = '';
                 userListEl.innerHTML = '';
-                callControls.style.display = 'none'; // Sembunyikan tombol navigasi
+                callControls.style.setProperty('display', 'none', 'important'); // Sembunyikan tombol navigasi
                 chatMessages.innerHTML = '<div style="text-align:center; color:#64748b; margin-top:20px; font-size:12px;">Anda telah terputus dari panggilan.</div>';
                 typingUsers.clear(); updateTypingIndicator();
+                updateVideoGridVisibility(); // Segarkan tampilan agar pesan "Anda sedang Offline" muncul
             });
 
             function stopScreenShare() {

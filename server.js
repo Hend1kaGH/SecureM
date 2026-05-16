@@ -1,10 +1,34 @@
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const mongoose = require('mongoose');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+    cors: {
+        origin: "*", // Nanti ganti "*" dengan URL Vercel Anda untuk keamanan produksi
+        methods: ["GET", "POST"]
+    }
+});
+
+// Koneksi ke MongoDB
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/webradio')
+    .then(() => console.log('Terhubung ke MongoDB'))
+    .catch(err => console.error('Gagal koneksi MongoDB:', err));
+
+// Skema Database Pesan
+const messageSchema = new mongoose.Schema({
+    messageId: String,
+    channel: String,
+    username: String,
+    text: String,
+    image: String,
+    type: { type: String, default: 'text' },
+    createdAt: { type: Date, default: Date.now }
+});
+const Message = mongoose.model('Message', messageSchema);
 
 // Menyajikan file HTML yang ada di folder yang sama dengan server.js
 app.use(express.static(__dirname));
@@ -73,6 +97,11 @@ io.on('connection', (socket) => {
         socket.emit('usernameAssigned', uniqueName); // Kirim balik nama yang disetujui ke klien
         updateUserList(channel); // Beri tahu channel baru ada orang yang masuk
         socket.to(channel).emit('userJoined', { id: socket.id, username: uniqueName });
+
+        // Tarik riwayat pesan dari MongoDB
+        Message.find({ channel }).sort({ createdAt: 1 }).limit(50)
+            .then(messages => socket.emit('chatHistory', messages))
+            .catch(err => console.error(err));
     });
 
     // Fungsi untuk keluar dari channel (Disconnect / Off)
@@ -108,11 +137,18 @@ io.on('connection', (socket) => {
     });
 
     // Menerima pesan teks dan menyiarkannya ke semua orang di channel yang sama
-    socket.on('textMessage', (text) => {
+    socket.on('textMessage', async (text) => {
         if (socket.currentChannel && activeUsers[socket.id]) {
             const username = activeUsers[socket.id].username;
             // Membuat ID unik acak (Kombinasi waktu & string acak)
             const messageId = Date.now().toString(36) + Math.random().toString(36).substr(2);
+
+            // Simpan ke MongoDB
+            const newMsg = new Message({
+                messageId, channel: socket.currentChannel, username, text, type: 'text'
+            });
+            await newMsg.save().catch(err => console.error(err));
+
             io.to(socket.currentChannel).emit('textMessage', { id: messageId, username, text });
         }
     });
@@ -126,17 +162,25 @@ io.on('connection', (socket) => {
     });
 
     // Menerima permintaan hapus pesan dan menyebarkannya
-    socket.on('deleteMessage', (messageId) => {
+    socket.on('deleteMessage', async (messageId) => {
         if (socket.currentChannel) {
+            await Message.deleteOne({ messageId }).catch(err => console.error(err));
             io.to(socket.currentChannel).emit('messageDeleted', messageId);
         }
     });
 
     // Menerima data gambar dan menyiarkannya ke semua klien lain
-    socket.on('imageMessage', (imageBase64) => {
+    socket.on('imageMessage', async (imageBase64) => {
         if (socket.currentChannel) {
             const username = activeUsers[socket.id].username;
             const messageId = Date.now().toString(36) + Math.random().toString(36).substr(2);
+
+            // Simpan ke MongoDB
+            const newMsg = new Message({
+                messageId, channel: socket.currentChannel, username, image: imageBase64, type: 'image'
+            });
+            await newMsg.save().catch(err => console.error(err));
+
             io.to(socket.currentChannel).emit('imageMessage', { id: messageId, username, image: imageBase64 });
         }
     });
