@@ -691,10 +691,11 @@
         if (typeof io === 'undefined') {
             alert("ERR: SERVER MATI. Pastikan Anda mengakses via http://localhost:3000 dan BUKAN mengklik ganda file HTML.");
         } else {
-            // Ganti URL di bawah dengan URL server Render/Railway Anda nanti
-            // Masukkan URL Backend dari Koyeb/Render. Pastikan tidak ada tanda '/' di paling belakang.
-            const BACKEND_URL = 'https://URL-BACKEND-ANDA-DI-KOYEB-ATAU-RENDER.com'; 
-            const socket = io(BACKEND_URL);
+            // Kosongkan BACKEND_URL karena UI dan Backend sama-sama di Vercel
+            const BACKEND_URL = ''; 
+            const socket = io(BACKEND_URL, {
+                transports: ['polling'] // Wajib untuk Vercel karena WebSocket persisten tidak didukung
+            });
             
             let currentChannel = '1';
             const chDisplay = document.getElementById('ch-display');
