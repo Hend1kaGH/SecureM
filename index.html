@@ -691,11 +691,10 @@
         if (typeof io === 'undefined') {
             alert("ERR: SERVER MATI. Pastikan Anda mengakses via http://localhost:3000 dan BUKAN mengklik ganda file HTML.");
         } else {
-            // Kosongkan BACKEND_URL karena UI dan Backend sama-sama di Vercel
+            // Masukkan URL Live Site dari Glitch / Koyeb / Render Anda di sini
+            // Contoh: 'https://backend-radio-saya.glitch.me'
             const BACKEND_URL = ''; 
-            const socket = io(BACKEND_URL, {
-                transports: ['polling'] // Wajib untuk Vercel karena WebSocket persisten tidak didukung
-            });
+            const socket = io(BACKEND_URL);
             
             let currentChannel = '1';
             const chDisplay = document.getElementById('ch-display');
